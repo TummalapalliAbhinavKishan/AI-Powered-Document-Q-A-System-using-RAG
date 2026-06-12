@@ -1,22 +1,31 @@
 import logging
-from fastapi import FastAPI
+import base64
+from fastapi import FastAPI, UploadFile, File
+from pydantic import BaseModel
 import inngest
 import inngest.fast_api
 from inngest.experimental import ai
 from dotenv import load_dotenv
+load_dotenv()
+
 import uuid
 import os
 import datetime
-from data_loader import load_and_chunk_pdf, embed_texts
+from data_loader import load_and_chunk_pdf, load_and_chunk_pdf_bytes, embed_texts
 from vector_db import QdrantStorage
 from custom_types import RAQQueryResult, RAGSearchResult, RAGUpsertResult, RAGChunkAndSrc
+from openai import OpenAI
 
-load_dotenv()
+
+# Set INNGEST_ENV=production in Netlify environment variables.
+# Local dev leaves this unset (defaults to "development") so the Inngest
+# dev server is still used without any changes to your local workflow.
+_is_production = os.getenv("INNGEST_ENV", "development") == "production"
 
 inngest_client = inngest.Inngest(
     app_id="rag_app",
     logger=logging.getLogger("uvicorn"),
-    is_production=False,
+    is_production=_is_production,
     serializer=inngest.PydanticSerializer()
 )
 
@@ -34,9 +43,18 @@ inngest_client = inngest.Inngest(
 )
 async def rag_ingest_pdf(ctx: inngest.Context):
     def _load(ctx: inngest.Context) -> RAGChunkAndSrc:
-        pdf_path = ctx.event.data["pdf_path"]
-        source_id = ctx.event.data.get("source_id", pdf_path)
-        chunks = load_and_chunk_pdf(pdf_path)
+        source_id = ctx.event.data.get("source_id", "uploaded.pdf")
+        pdf_content_b64 = ctx.event.data.get("pdf_content_b64")
+        pdf_path = ctx.event.data.get("pdf_path")
+
+        if pdf_content_b64:
+            # Production / Netlify path: PDF bytes are base64-encoded in the event.
+            pdf_bytes = base64.b64decode(pdf_content_b64)
+            chunks = load_and_chunk_pdf_bytes(pdf_bytes)
+        else:
+            # Local dev path: PDF lives on disk and the path is passed directly.
+            chunks = load_and_chunk_pdf(pdf_path)
+
         return RAGChunkAndSrc(chunks=chunks, source_id=source_id)
 
     def _upsert(chunks_and_src: RAGChunkAndSrc) -> RAGUpsertResult:
@@ -98,6 +116,70 @@ async def rag_query_pdf_ai(ctx: inngest.Context):
     answer = res["choices"][0]["message"]["content"].strip()
     return {"answer": answer, "sources": found.sources, "num_contexts": len(found.contexts)}
 
+
+class QueryRequest(BaseModel):
+    question: str
+    top_k: int = 5
+
+
 app = FastAPI()
+
+
+@app.post("/api/ingest")
+async def ingest_pdf(file: UploadFile = File(...)):
+    """
+    Receives a PDF upload from the static frontend, base64-encodes it, and
+    fires an Inngest event so the existing rag_ingest_pdf function handles
+    chunking, embedding, and storage — with throttle/rate-limit intact.
+    """
+    pdf_bytes = await file.read()
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    source_id = file.filename or "uploaded.pdf"
+
+    await inngest_client.send(
+        inngest.Event(
+            name="rag/ingest_pdf",
+            data={
+                "pdf_content_b64": pdf_b64,
+                "source_id": source_id,
+            },
+        )
+    )
+    return {"status": "triggered", "source_id": source_id}
+
+
+@app.post("/api/query")
+async def query_pdf(req: QueryRequest):
+    """
+    Synchronous RAG query endpoint used by the static frontend.
+    Performs the same embed → search → LLM pipeline as rag_query_pdf_ai
+    without requiring the frontend to poll the Inngest API.
+    """
+    oai = OpenAI()
+    query_vec = embed_texts([req.question])[0]
+    store = QdrantStorage()
+    found = store.search(query_vec, req.top_k)
+
+    context_block = "\n\n".join(f"- {c}" for c in found["contexts"])
+    user_content = (
+        "Use the following context to answer the question.\n\n"
+        f"Context:\n{context_block}\n\n"
+        f"Question: {req.question}\n"
+        "Answer concisely using the context above."
+    )
+
+    res = oai.chat.completions.create(
+        model="gpt-4o-mini",
+        max_tokens=1024,
+        temperature=0.2,
+        messages=[
+            {"role": "system", "content": "You answer questions using only the provided context."},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    answer = res.choices[0].message.content.strip()
+    return {"answer": answer, "sources": found["sources"], "num_contexts": len(found["contexts"])}
+
 
 inngest.fast_api.serve(app, inngest_client, [rag_ingest_pdf, rag_query_pdf_ai])

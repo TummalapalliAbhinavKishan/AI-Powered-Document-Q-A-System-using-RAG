@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RAG — PDF Q&amp;A</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f2f6;
+      color: #333;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+    .container { max-width: 760px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: 1.25rem; display: flex; align-items: center; gap: .5rem; }
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 1.75rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+    label { display: block; font-size: .85rem; font-weight: 600; color: #555; margin-bottom: .4rem; }
+    input[type="file"] {
+      width: 100%; padding: .45rem; font-size: .9rem;
+      border: 1px solid #d0d0d0; border-radius: 6px;
+      background: #fafafa; margin-bottom: .9rem;
+    }
+    input[type="text"] {
+      width: 100%; padding: .55rem .75rem; font-size: .95rem;
+      border: 1px solid #d0d0d0; border-radius: 6px; margin-bottom: .9rem;
+    }
+    input[type="text"]:focus, input[type="number"]:focus { outline: none; border-color: #ff4b4b; }
+    .row { display: flex; align-items: center; gap: 1rem; margin-bottom: .9rem; }
+    .row label { margin: 0; white-space: nowrap; }
+    input[type="number"] {
+      width: 80px; padding: .5rem .6rem; font-size: .9rem;
+      border: 1px solid #d0d0d0; border-radius: 6px;
+    }
+    button {
+      background: #ff4b4b; color: #fff; border: none;
+      padding: .6rem 1.5rem; border-radius: 6px; font-size: .95rem;
+      cursor: pointer; font-weight: 600; transition: background .15s;
+    }
+    button:hover { background: #e03c3c; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .status {
+      margin-top: .85rem; padding: .55rem .8rem;
+      border-radius: 6px; font-size: .88rem;
+    }
+    .success { background: #d4edda; color: #155724; }
+    .error   { background: #f8d7da; color: #721c24; }
+    .info    { background: #e2e8f0; color: #444; }
+    hr { border: none; border-top: 1px solid #e5e5e5; margin: .5rem 0 1.5rem; }
+    .answer-card {
+      margin-top: 1.25rem; padding: 1rem 1.25rem;
+      background: #f9f9f9; border: 1px solid #e5e5e5;
+      border-radius: 8px;
+    }
+    .answer-card h2 { font-size: 1rem; margin-bottom: .5rem; color: #333; }
+    .answer-text { font-size: .95rem; line-height: 1.65; white-space: pre-wrap; }
+    .sources-text { margin-top: .75rem; font-size: .8rem; color: #777; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="card">
+      <h1>📄 Upload a PDF to Ingest</h1>
+      <label for="pdfInput">Choose a PDF file</label>
+      <input type="file" id="pdfInput" accept=".pdf">
+      <button id="uploadBtn" onclick="uploadPDF()">Upload &amp; Ingest</button>
+      <div id="uploadStatus"></div>
+    </div>
+
+    <hr>
+
+    <div class="card">
+      <h1>💬 Ask a question about your PDFs</h1>
+      <label for="question">Your question</label>
+      <input type="text" id="question" placeholder="e.g. What is the main topic of the document?">
+      <div class="row">
+        <label for="topK">Chunks to retrieve:</label>
+        <input type="number" id="topK" value="5" min="1" max="20">
+      </div>
+      <button id="askBtn" onclick="askQuestion()">Ask</button>
+      <div id="queryStatus"></div>
+      <div id="answerSection" style="display:none" class="answer-card">
+        <h2>Answer</h2>
+        <div class="answer-text" id="answerText"></div>
+        <div class="sources-text" id="sourcesText"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    async function uploadPDF() {
+      const fileInput = document.getElementById("pdfInput");
+      const statusEl  = document.getElementById("uploadStatus");
+      const btn       = document.getElementById("uploadBtn");
+
+      if (!fileInput.files.length) {
+        statusEl.innerHTML = '<div class="status error">Please select a PDF file.</div>';
+        return;
+      }
+
+      const file = fileInput.files[0];
+      btn.disabled = true;
+      statusEl.innerHTML = '<div class="status info">⏳ Uploading and triggering ingestion…</div>';
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const resp = await fetch("/api/ingest", { method: "POST", body: formData });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          throw new Error(txt || `HTTP ${resp.status}`);
+        }
+        statusEl.innerHTML = `<div class="status success">✓ Triggered ingestion for: <strong>${file.name}</strong>. You can upload another PDF if you like.</div>`;
+      } catch (e) {
+        statusEl.innerHTML = `<div class="status error">Error: ${e.message}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function askQuestion() {
+      const question  = document.getElementById("question").value.trim();
+      const topK      = parseInt(document.getElementById("topK").value) || 5;
+      const statusEl  = document.getElementById("queryStatus");
+      const answerSec = document.getElementById("answerSection");
+      const btn       = document.getElementById("askBtn");
+
+      if (!question) {
+        statusEl.innerHTML = '<div class="status error">Please enter a question.</div>';
+        return;
+      }
+
+      btn.disabled = true;
+      answerSec.style.display = "none";
+      statusEl.innerHTML = '<div class="status info">⏳ Sending event and generating answer…</div>';
+
+      try {
+        const resp = await fetch("/api/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, top_k: topK }),
+        });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          throw new Error(txt || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+
+        document.getElementById("answerText").textContent = data.answer || "(No answer)";
+
+        const sourcesEl = document.getElementById("sourcesText");
+        if (data.sources && data.sources.length) {
+          sourcesEl.textContent = "Sources: " + data.sources.join(", ");
+        } else {
+          sourcesEl.textContent = "";
+        }
+
+        answerSec.style.display = "block";
+        statusEl.textContent = "";
+      } catch (e) {
+        statusEl.innerHTML = `<div class="status error">Error: ${e.message}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

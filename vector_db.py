@@ -1,11 +1,21 @@
+import os
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
 
 
 class QdrantStorage:
     def __init__(self, collection="docs", dim=3072):
-        self.client = QdrantClient(path="./qdrant_local_storage")
-        
+        url = os.getenv("QDRANT_URL")
+        api_key = os.getenv("QDRANT_API_KEY")
+
+        if url:
+            # Production / Netlify: use Qdrant Cloud.
+            # Set QDRANT_URL and QDRANT_API_KEY in Netlify environment variables.
+            self.client = QdrantClient(url=url, api_key=api_key)
+        else:
+            # Local dev: use on-disk storage (no cloud credentials needed).
+            self.client = QdrantClient(path="./qdrant_local_storage")
+
         self.collection = collection
         if not self.client.collection_exists(self.collection):
             self.client.create_collection(

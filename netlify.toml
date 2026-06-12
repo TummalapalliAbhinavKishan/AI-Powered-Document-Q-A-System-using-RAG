@@ -1,0 +1,28 @@
+[build]
+  publish = "static"
+
+[functions]
+  directory = "netlify/functions"
+
+[functions.api]
+  external_node_modules = []
+  # Tell Netlify which requirements file to use for this Python function
+  # (avoids bundling streamlit and other local-dev-only deps)
+
+  included_files = [
+    "main.py",
+    "data_loader.py",
+    "vector_db.py",
+    "custom_types.py"
+  ]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
