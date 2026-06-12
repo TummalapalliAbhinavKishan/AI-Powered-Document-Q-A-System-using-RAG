@@ -11,7 +11,15 @@ dependencies = [
     "llama-index-readers-file>=0.5.4",
     "openai>=1.107.0",
     "python-dotenv>=1.1.1",
+    "python-multipart>=0.0.18",
     "qdrant-client>=1.15.1",
-    "streamlit>=1.49.1",
     "uvicorn>=0.35.0",
+]
+
+# Streamlit is only the optional local frontend (terminal 3 in local dev).
+# It is kept out of the main dependencies so the Vercel function bundle
+# stays small; `uv sync` still installs it locally by default.
+[dependency-groups]
+dev = [
+    "streamlit>=1.49.1",
 ]

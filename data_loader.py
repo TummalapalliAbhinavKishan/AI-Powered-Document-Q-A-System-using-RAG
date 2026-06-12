@@ -26,7 +26,7 @@ def load_and_chunk_pdf(path: str) -> list[str]:
 def load_and_chunk_pdf_bytes(pdf_bytes: bytes) -> list[str]:
     """
     Same as load_and_chunk_pdf but accepts raw PDF bytes instead of a path.
-    Used in the Netlify / serverless path where the PDF is base64-encoded in
+    Used in the serverless path where the PDF is base64-encoded in
     the Inngest event payload rather than saved to disk.
     """
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:

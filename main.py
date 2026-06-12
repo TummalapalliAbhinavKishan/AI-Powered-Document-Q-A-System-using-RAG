@@ -17,7 +17,7 @@ from custom_types import RAQQueryResult, RAGSearchResult, RAGUpsertResult, RAGCh
 from openai import OpenAI
 
 
-# Set INNGEST_ENV=production in Netlify environment variables.
+# Set INNGEST_ENV=production in Vercel environment variables.
 # Local dev leaves this unset (defaults to "development") so the Inngest
 # dev server is still used without any changes to your local workflow.
 _is_production = os.getenv("INNGEST_ENV", "development") == "production"
@@ -48,7 +48,7 @@ async def rag_ingest_pdf(ctx: inngest.Context):
         pdf_path = ctx.event.data.get("pdf_path")
 
         if pdf_content_b64:
-            # Production / Netlify path: PDF bytes are base64-encoded in the event.
+            # Production / serverless path: PDF bytes are base64-encoded in the event.
             pdf_bytes = base64.b64decode(pdf_content_b64)
             chunks = load_and_chunk_pdf_bytes(pdf_bytes)
         else:

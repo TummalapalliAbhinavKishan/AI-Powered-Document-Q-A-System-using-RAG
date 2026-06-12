@@ -13,6 +13,11 @@ venv
 # Local data / uploads
 /uploads
 qdrant_local_storage
+qdrant_storage
+
+# IDE
+.idea/
+.vscode/
 
 # Secrets
 .env
