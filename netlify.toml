@@ -5,10 +5,14 @@
   directory = "netlify/functions"
 
 [functions.api]
-  external_node_modules = []
-  # Tell Netlify which requirements file to use for this Python function
-  # (avoids bundling streamlit and other local-dev-only deps)
+  included_files = [
+    "main.py",
+    "data_loader.py",
+    "vector_db.py",
+    "custom_types.py"
+  ]
 
+[functions.inngest]
   included_files = [
     "main.py",
     "data_loader.py",
