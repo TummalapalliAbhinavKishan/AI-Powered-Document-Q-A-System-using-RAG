@@ -1,5 +1,6 @@
 [build]
   publish = "static"
+  command = "echo 'static build'"
 
 [functions]
   directory = "netlify/functions"
