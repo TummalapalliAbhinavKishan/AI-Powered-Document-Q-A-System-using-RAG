@@ -1,25 +1,13 @@
 [build]
   publish = "static"
-  command = "echo 'static build'"
 
-[functions]
-  directory = "netlify/functions"
-
-[functions.api]
-  included_files = [
-    "main.py",
-    "data_loader.py",
-    "vector_db.py",
-    "custom_types.py"
-  ]
-
-[functions.inngest]
-  included_files = [
-    "main.py",
-    "data_loader.py",
-    "vector_db.py",
-    "custom_types.py"
-  ]
+# Proxy /api/* calls to the Render.com Python backend.
+# Update the `to` URL below after you create your Render service.
+[[redirects]]
+  from = "/api/*"
+  to = "https://REPLACE_WITH_RENDER_URL.onrender.com/api/:splat"
+  status = 200
+  force = true
 
 [[redirects]]
   from = "/*"
