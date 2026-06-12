@@ -1,10 +1,3 @@
-"""
-Dedicated Netlify Function for Inngest.
-
-Uses CommHandler directly (no FastAPI/Mangum) so the function URL
-/.netlify/functions/inngest is the Inngest serve endpoint with no
-path-routing ambiguity.
-"""
 import asyncio
 import base64
 import json
@@ -14,7 +7,9 @@ import sys
 _here = os.path.dirname(os.path.abspath(__file__))
 for _p in [
     _here,
+    os.path.normpath(os.path.join(_here, "..")),
     os.path.normpath(os.path.join(_here, "..", "..")),
+    os.path.normpath(os.path.join(_here, "..", "..", "..")),
     "/var/task",
 ]:
     if _p not in sys.path:
