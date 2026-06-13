@@ -161,24 +161,27 @@ async def favicon():
 @app.post("/api/ingest")
 async def ingest_pdf(file: UploadFile = File(...)):
     """
-    Receives a PDF upload from the static frontend, base64-encodes it, and
-    fires an Inngest event so the existing rag_ingest_pdf function handles
-    chunking, embedding, and storage — with throttle/rate-limit intact.
+    Receives a PDF upload and ingests it synchronously: chunk → embed → store
+    in Qdrant, all within this request. This is the reliable path on Vercel
+    serverless — it does not depend on an Inngest event round-trip, so the
+    data is immediately queryable.
+
+    The equivalent Inngest function (rag_ingest_pdf) is still registered at
+    /api/inngest for the async/background-processing variant.
     """
     pdf_bytes = await file.read()
-    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     source_id = file.filename or "uploaded.pdf"
 
-    await inngest_client.send(
-        inngest.Event(
-            name="rag/ingest_pdf",
-            data={
-                "pdf_content_b64": pdf_b64,
-                "source_id": source_id,
-            },
-        )
-    )
-    return {"status": "triggered", "source_id": source_id}
+    chunks = load_and_chunk_pdf_bytes(pdf_bytes)
+    if not chunks:
+        return {"status": "error", "detail": "No text could be extracted from the PDF.", "source_id": source_id}
+
+    vecs = embed_texts(chunks)
+    ids = [str(uuid.uuid5(uuid.NAMESPACE_URL, f"{source_id}:{i}")) for i in range(len(chunks))]
+    payloads = [{"source": source_id, "text": chunks[i]} for i in range(len(chunks))]
+    QdrantStorage().upsert(ids, vecs, payloads)
+
+    return {"status": "ingested", "source_id": source_id, "chunks": len(chunks)}
 
 
 @app.post("/api/query")

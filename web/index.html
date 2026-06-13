@@ -120,7 +120,11 @@
           const txt = await resp.text();
           throw new Error(txt || `HTTP ${resp.status}`);
         }
-        statusEl.innerHTML = `<div class="status success">✓ Triggered ingestion for: <strong>${file.name}</strong>. You can upload another PDF if you like.</div>`;
+        const data = await resp.json();
+        if (data.status === "error") {
+          throw new Error(data.detail || "Ingestion failed.");
+        }
+        statusEl.innerHTML = `<div class="status success">✓ Ingested <strong>${file.name}</strong> (${data.chunks} chunks). You can now ask questions about it below.</div>`;
       } catch (e) {
         statusEl.innerHTML = `<div class="status error">Error: ${e.message}</div>`;
       } finally {
