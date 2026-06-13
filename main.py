@@ -125,7 +125,7 @@ class QueryRequest(BaseModel):
 app = FastAPI()
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 import pathlib
 
 app.add_middleware(
@@ -135,15 +135,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Path to the static frontend, bundled alongside this file on Vercel.
-_INDEX_HTML = pathlib.Path(__file__).parent / "public" / "index.html"
+# Load the frontend page once at import time. It lives in web/ (not public/)
+# because Vercel uploads public/ to its CDN and does NOT include it in the
+# serverless function bundle, so the function can't read it at runtime.
+_INDEX_PATH = pathlib.Path(__file__).parent / "web" / "index.html"
+_INDEX_HTML = _INDEX_PATH.read_text(encoding="utf-8") if _INDEX_PATH.is_file() else None
 
 
 @app.get("/", include_in_schema=False)
 async def serve_index():
     """Serve the upload/query page. FastAPI is Vercel's catch-all, so the
     root route must be handled here rather than relying on static hosting."""
-    return FileResponse(_INDEX_HTML)
+    if _INDEX_HTML is None:
+        return PlainTextResponse(
+            f"index.html not found at {_INDEX_PATH}", status_code=500
+        )
+    return HTMLResponse(_INDEX_HTML)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
